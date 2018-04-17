@@ -185,8 +185,8 @@ class MorphPreProcess(ImagePreProcess):
     Derived class of ImagePreProcess
     '''
 
-    def __init__(self, config_file='./config/config.json', dep='DEFAULT'):
-        ImagePreProcess.__init__(self, config_file=config_file, dep=dep)
+    def __init__(self, landmark_file='./data/shape_predictor_68_face_landmarks.dat'):
+        ImagePreProcess.__init__(self, landmark_file=landmark_file)
 
     def preprocess_morph_meta(self, morph_data_file, out_file):
         '''Contains MORPH database specific filters

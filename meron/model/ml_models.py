@@ -34,7 +34,21 @@ def plot_confusion_matrix(true_vals, predicted_vals, classes,
 
     Parameters
     ----------
-
+    true_vals : Numpy array, shape = [n_samples]
+                Actual values to compare against prediction
+    predicted_vals : Numpy array, shape = [n_samples]
+                     Model predicted values
+    classes : Array, shape = [n_samples]
+              List of labels to index the matrix. This may be used to reoder or select a subset of
+              labels. If none is given, those that appear at least once in true_vals or predicted_vals
+              are used in sorted order.
+    savefig : Logical or string
+              If False no image of confusion matrix is saved else the fname of the image for the
+              confusion matrix.
+    title : String
+            Title for confusion matrix plot
+    cmap : Matplotlib colormap object
+           Colormap for confusion matrix
     """
     cm = confusion_matrix(true_vals, predicted_vals, labels=classes)
 
