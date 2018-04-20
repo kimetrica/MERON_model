@@ -82,7 +82,14 @@ def plot_confusion_matrix(true_vals, predicted_vals, classes,
 
 
 class Meron(object):
-    '''
+    '''A Convolutional Neural Network for the detection of malnutrition using facial imagery
+
+    Parameters
+    ----------
+    pred_type : string
+                Type of malnutrition prediction to perform -
+                    'classification' -- Classify the malnutrition status of an individual image
+                    'regression' -- Prediction of the Weight for Height Z-score (WHZ)
     '''
 
     def __init__(self, pred_type='classification'):

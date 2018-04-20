@@ -70,7 +70,7 @@ class ImagePreProcess(object):
         # --------------------------------------------
         self.detector = dlib.get_frontal_face_detector()
         self.predictor = dlib.shape_predictor(landmark_file)
-        self.fa = FaceAligner(self.predictor, desiredFaceWidth=224)
+        self.fa = FaceAligner(self.predictor, desiredLeftEye=(0.35, 0.50), desiredFaceWidth=224)
 
     def _detect_align(self, img, n_faces):
         '''Detect faces in image and align.
@@ -368,7 +368,12 @@ class ExtractCNNfeatures(object):
 
         return images
 
-    def extract_batch(self, img_dir, processed_data_file, out_dir, n=1000):
+    def extract_batch(self,
+                      img_dir,
+                      processed_data_file,
+                      out_dir,
+                      photo_cname='photo_id',
+                      n=1000):
         '''Batch extract VGG CNN features from a directory of images
 
         Parameters
@@ -393,12 +398,12 @@ class ExtractCNNfeatures(object):
 
         # Determine if image file exists
         img_meta['img_exists'] = img_meta.apply(
-            lambda x, img_dir=img_dir: os.path.isfile(os.path.join(img_dir, x['photo'])), axis=1
+            lambda x, img_dir=img_dir: os.path.isfile(os.path.join(img_dir, x[photo_cname])), axis=1
         )
         img_meta = img_meta[img_meta['img_exists']]
         img_meta.drop(['img_exists'], axis=1, inplace=True)
 
-        file_list = img_meta['photo']
+        file_list = img_meta[photo_cname]
         file_list = file_list.sample(frac=1)
 
         # Load image, pre-process, and extract features
@@ -409,7 +414,7 @@ class ExtractCNNfeatures(object):
             # VGG model expects input with 4 dimensions
             features = self.extractor.predict(X, verbose=1)
             img_files.reset_index(drop=True, inplace=True)
-            df_fnames = pd.DataFrame(img_files, columns=['photo'])
+            df_fnames = pd.DataFrame(img_files, columns=[photo_cname])
             df = pd.DataFrame(features)
             df = df_fnames.join(df)
 
