@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 
-class ZScores(object):
+class Zscores(object):
     '''A calculator to determine the zscore of the following child growth indicators:
 
     Weight-for-height (WFH)

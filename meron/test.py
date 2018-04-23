@@ -1,5 +1,6 @@
-from preprocessing import ImagePreProcess, ExtractCNNfeatures
+from preprocessing import ImagePreProcess, ExtractCNNfeatures, SmartZscores
 from PIL import Image
+
 
 # This directory contains the original raw SMART images
 raw_img_dir = '/Data/kimetrica/meron/kenya_data/meron_photos'
@@ -16,6 +17,9 @@ landmark_file = '/home/ebaumer/Code/kimetrica/meron_gh/data/shape_predictor_68_f
 # This is the meta file for the SMART/MERON data
 meta_file = '/Data/kimetrica/meron/kenya_data/meron_link_data/all_areas.csv'
 
+# This is the directory for the who zscore data tables
+who_tables_dir = '/home/ebaumer/Code/kimetrica/meron_gh/data'
+
 # Create instance of MORPH specific pre-processing
 # meron = ImagePreProcess(landmark_file=landmark_file)
 
@@ -25,6 +29,13 @@ meta_file = '/Data/kimetrica/meron/kenya_data/meron_link_data/all_areas.csv'
 
 # p_img = Image.fromarray(processed_img[0], 'RGB')
 
-con_feats = ExtractCNNfeatures()
+# con_feats = ExtractCNNfeatures()
 # Extract convolutional features from pre-trained VGG network
-con_feats.extract_batch(processed_img_dir, meta_file, cnn_feature_dir, n=1000)
+# con_feats.extract_batch(processed_img_dir, meta_file, cnn_feature_dir, n=1000)
+
+# Find growth indicators for SMART data
+sz = SmartZscores(who_tables_dir)
+sz.calc_measures(meta_file, measures=['wfh', 'hfa', 'wfa'])
+
+sz.df_meta.to_csv('/Data/kimetrica/meron/kenya_data/meron_link_data/meron_meta_processed.csv',
+    index=False)

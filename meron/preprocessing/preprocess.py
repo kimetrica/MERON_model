@@ -13,6 +13,7 @@ from keras_vggface.vggface import VGGFace
 from keras.preprocessing import image
 from keras.applications.vgg16 import preprocess_input
 from sklearn.decomposition import PCA
+from preprocessing.zscore_finder import Zscores
 
 
 def ckfile(fname, logFlg=False, exit_flg=False):
@@ -421,3 +422,75 @@ class ExtractCNNfeatures(object):
             # Write features to csv file for batch of n images
             fname = 'features_' + str(i) + '.csv'
             df.to_csv(os.path.join(out_dir, fname), index=False)
+
+
+class SmartZscores(Zscores):
+    '''
+    '''
+
+    def __init__(self, data_dir, file_names={}):
+        Zscores.__init__(self, data_dir, file_names)
+
+        self.df_meta = None
+
+        # ---------------
+        # Initiate logger
+        # ---------------
+        self.logger = logging.getLogger("MERON_extractCNNfeatures")
+        self.logger.setLevel(logging.DEBUG)
+        hdlr1 = logging.StreamHandler(stream=sys.stdout)
+        fmt1 = logging.Formatter(
+            "%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s"
+        )
+        hdlr1.setFormatter(fmt1)
+        self.logger.addHandler(hdlr1)
+
+    def _zscore(self, x, measure):
+        '''
+        '''
+        # Convert gender to binary
+        if x['gender'].lower() == 'female':
+            gender = 0
+        else:
+            gender = 1
+
+        if x['age_months'] == np.nan:
+            return np.nan
+
+        if measure == 'wfh':
+            if x['age_months'] <= 24:
+                score = self.z_score(
+                    gender, measure='wfl', length=x['height_cm'], weight=x['weight_kg']
+                )
+            else:
+                score = self.z_score(
+                    gender, measure='wfh', height=x['height_cm'], weight=x['weight_kg']
+                )
+
+        if measure == 'hfa':
+            if x['age_months'] <= 24:
+                score = self.z_score(
+                    gender, measure='lfa', length=x['height_cm'], age=x['age_months']
+                )
+            else:
+                score = self.z_score(
+                    gender, measure='hfa', height=x['height_cm'], age=x['age_months']
+                )
+
+        if measure == 'wfa':
+            score = self.z_score(gender, measure='wfa', weight=x['weight_kg'], age=x['age_months'])
+
+        return score
+
+    def calc_measures(self, meta_file, measures=['wfh']):
+        '''
+        '''
+
+        self.df_meta = pd.read_csv(meta_file)
+        for measure in measures:
+            self.df_meta = self.df_meta.dropna(
+                subset=['age_months', 'gender', 'height_cm', 'weight_kg'], axis=0
+            )
+            self.df_meta[measure] = self.df_meta.apply(lambda x: self._zscore(x, measure), axis=1)
+
+        return True
