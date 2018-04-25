@@ -428,10 +428,10 @@ class SmartZscores(Zscores):
     '''
     '''
 
-    def __init__(self, data_dir, file_names={}):
+    def __init__(self, data_dir, meta_file, file_names={}):
         Zscores.__init__(self, data_dir, file_names)
 
-        self.df_meta = None
+        self.df_meta = pd.read_csv(meta_file)
 
         # ---------------
         # Initiate logger
@@ -482,15 +482,68 @@ class SmartZscores(Zscores):
 
         return score
 
-    def calc_measures(self, meta_file, measures=['wfh']):
-        '''
+    def _mclass(sef, x, str_int_flg='str'):
+        ''' 0 = No actue malnutrition
+            1 = Moderate acute malnutrition
+            2 = Severe acute malnutrition
         '''
 
-        self.df_meta = pd.read_csv(meta_file)
+        # No acute malnutrition
+        if x['wfh'] >= -2:
+
+            if str_int_flg == 'int':
+                return 0
+            elif str_int_flg == 'str':
+                return 'normal'
+
+        # Moderate acute malnutrition
+        elif (x['wfh'] < -2) and (x['wfh'] > -3):
+
+            if str_int_flg == 'int':
+                return 1
+            elif str_int_flg == 'str':
+                return 'mam'
+
+        # Severe acute malnutrition
+        else:
+
+            if str_int_flg == 'int':
+                return 2
+            elif str_int_flg == 'str':
+                return 'sam'
+
+    def write_processed_meta(self, out_fname):
+
+        self.df_meta.to_csv(out_fname, index=False)
+
+        return True
+
+    def calc_measures(self, measures=['wfh']):
+        '''
+        '''
         for measure in measures:
             self.df_meta = self.df_meta.dropna(
                 subset=['age_months', 'gender', 'height_cm', 'weight_kg'], axis=0
             )
             self.df_meta[measure] = self.df_meta.apply(lambda x: self._zscore(x, measure), axis=1)
+
+        return True
+
+    def classify_malnutrition(self):
+
+        self.df_meta['maln_class'] = self.df_meta.apply(lambda x: self._mclass(x), axis=1)
+
+        return True
+
+    def cat_encoding(self):
+
+        # --------------------
+        # Categorical encoding
+        # --------------------
+        gender_dummies = pd.get_dummies(
+            self.df_meta['gender'].str.lower(), prefix='gender', drop_first=True
+        )
+        y_dummies = pd.get_dummies(self.df_meta['maln_class'], prefix='maln')
+        self.df_meta = pd.concat([self.df_meta, gender_dummies, y_dummies], axis=1)
 
         return True

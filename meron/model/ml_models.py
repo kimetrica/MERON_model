@@ -95,7 +95,6 @@ class Meron(object):
     def __init__(self, pred_type='classification'):
 
         self.pred_type = pred_type
-        self.conv_model = None
 
         # ---------------
         # Initiate logger
@@ -125,37 +124,43 @@ class Meron(object):
 
         return class_weights
 
-    def build_model(self, conv_param_dict, n_hidden_layers=1):
+    @staticmethod
+    def build_model(neurons=128.,
+                    dropout=0.,
+                    activation='relu',
+                    optimizer='adam',
+                    input_dim=4098,
+                    task_type='classification',
+                    n_hidden_layers=1,
+                    n_nodes_output=3):
         """
         This function prepares the neural networks for training, using the
         optimized hyperparameters.
         """
         # Add first hidden layer
         conv_model = Sequential()
-        conv_model.add(Dense(conv_param_dict['neurons'], input_dim=conv_param_dict['input_dim']))
-        conv_model.add(Activation(conv_param_dict['activation']))
-        conv_model.add(Dropout(conv_param_dict['dropout']))
+        conv_model.add(Dense(neurons, input_dim=input_dim))
+        conv_model.add(Activation(activation))
+        conv_model.add(Dropout(dropout))
 
         # Add additional hidden layers
         for n in range(0, n_hidden_layers-1):
-            conv_model.add(Dense(conv_param_dict['neurons']))
-            conv_model.add(Dropout(conv_param_dict['dropout']))
-            conv_model.add(Activation(conv_param_dict['activation']))
+            conv_model.add(Dense(neurons))
+            conv_model.add(Dropout(dropout))
+            conv_model.add(Activation(activation))
 
         # Add output layer
-        if self.pred_type == 'classification':
-            conv_model.add(Dense(4, activation='softmax'))
+        if task_type == 'classification':
+            conv_model.add(Dense(n_nodes_output, activation='softmax'))
             conv_model.compile(loss='categorical_crossentropy',
-                               optimizer=conv_param_dict['optimizer'],
+                               optimizer=optimizer,
                                metrics=['accuracy'])
 
-        if self.pred_type == 'regression':
+        if task_type == 'regression':
             conv_model.add(Dense(1, activation='linear'))
             conv_model.compile(loss='mean_squared_error',
-                               optimizer=conv_param_dict['optimizer'],
+                               optimizer=optimizer,
                                metrics=[pearsonr])
-
-        self.conv_model = conv_model
 
         return conv_model
 
@@ -191,10 +196,8 @@ class Meron(object):
         init_param_dict['dropout'] = 0
         init_param_dict['activation'] = 'relu'
         init_param_dict['optimizer'] = 'adam'
-        init_param_dict['input_dim'] = 4103
+        init_param_dict['input_dim'] = 4098
         init_param_dict['task_type'] = 'classification'
-
-        conv_model_tune = self.build_model(init_param_dict, n_hidden_layers=num_hid_layers)
 
         # --------------
         # Classification
@@ -204,7 +207,7 @@ class Meron(object):
             score = make_scorer(geometric_mean_score)
             # Optimizer network with convolutional features
             conv_model = KerasClassifier(
-                build_fn=conv_model_tune,
+                build_fn=self.build_model,
                 epochs=n_epochs,
                 batch_size=batchsize,
                 validation_split=val_split,
@@ -219,7 +222,7 @@ class Meron(object):
 
             score = 'r2'
             conv_model = KerasRegressor(
-                build_fn=conv_model_tune,
+                build_fn=self.build_model,
                 epochs=n_epochs,
                 batch_size=batchsize,
                 validation_split=val_split,
@@ -265,11 +268,13 @@ class Meron(object):
         # only need to tune hyperparemeters once
         # conv_params = np.load(self.config[self.dep]["conv_params_file"]).item()
 
-        conv = self.build_models(conv_params, n_hidden_layers=num_hid_layers)
+        import ipdb; ipdb.set_trace()  # breakpoint 4716f91e //
+        conv = self.build_model(**conv_params, n_hidden_layers=num_hid_layers)
 
         # stop training if valdidation error increases for
         early_stop = EarlyStopping(monitor=early_stop_monitor, patience=early_stop_patience)
 
+        import ipdb; ipdb.set_trace()  # breakpoint 8f8a30e2 //
         if self.pred_type == 'classification':
             # train models
             conv.fit(
@@ -295,8 +300,6 @@ class Meron(object):
                 shuffle=True, verbose=1
             )
             self.logger.info('Finished training on convolutional features')
-
-        self.conv_model = conv
 
         if not (out_fname is None):
             conv.save(out_fname)
@@ -328,7 +331,6 @@ class MeronMorph(Meron):
 
     def prep_data(self,
                   features_dir,
-                  geom_file,
                   meta_file,
                   out_fname=None):
 
@@ -355,6 +357,84 @@ class MeronMorph(Meron):
             y = df.iloc[:, df.columns == 'bmi_cat']
         else:
             y = df.iloc[:, df.columns == 'bmi']
+
+        # split data in 60-20-20 train-val-test sets
+        train_x, test_x, train_y, test_y = train_test_split(
+            df, y, test_size=0.2, random_state=42
+        )
+
+        train_x_conv = train_x[var_list_conv].values
+        test_x_conv = test_x[var_list_conv].values
+
+        # Scale input data
+        conv_scaler = StandardScaler().fit(np.concatenate((train_x_conv, test_x_conv), axis=0))
+
+        train_x_conv = conv_scaler.transform(train_x_conv)
+        test_x_conv = conv_scaler.transform(test_x_conv)
+
+        train_y = train_y.values.flatten()
+        test_y = test_y.values.flatten()
+
+        train_test_set = {}
+        train_test_set['train_x_conv'] = train_x_conv
+        train_test_set['train_y'] = train_y
+        train_test_set['test_y'] = test_y
+        train_test_set['test_x_conv'] = test_x_conv
+
+        if not (out_fname is None):
+            joblib.dump(conv_scaler, out_fname)
+
+        return train_test_set
+
+
+class MeronSmart(Meron):
+    """
+    """
+
+    def __init__(self, pred_type='classification'):
+        Meron.__init__(self, pred_type=pred_type)
+
+    def _load_cnn_features(self, features_dir):
+
+        features = pd.DataFrame()
+        for f in os.listdir(features_dir):
+            df = pd.read_csv(os.path.join(features_dir, f))
+            features = pd.concat([features, df], axis=0)
+            print(f + ' loaded')
+
+        features = features.dropna()
+        features.iloc[:, 1:] = maxabs_scale(features.iloc[:, 1:])
+
+        return features
+
+    def prep_data(self,
+                  features_dir,
+                  meta_file,
+                  out_fname=None,
+                  cname_ind_class='maln_class',
+                  cname_ind='wfh',
+                  cname_merge='photo_id'):
+
+        features = self._load_cnn_features(features_dir)
+
+        # VGG has a feature dimension of 4096 for SoftMax
+        var_list_conv = list(np.arange(0, 4096))
+        var_list_conv = list(map(str, var_list_conv))
+
+        var_list_conv.extend(['age_months', 'gender_male'])
+
+        # Read in image meta data
+        meta = pd.read_csv(meta_file)
+
+        # Merge meta data, convolutional features, geometric features
+        df = meta.merge(features, on=cname_merge)
+        df = df.drop_duplicates(subset=cname_merge)
+
+        # Pull appropriate response variable
+        if self.pred_type == 'classification':
+            y = df.iloc[:, df.columns == cname_ind_class]
+        else:
+            y = df.iloc[:, df.columns == cname_ind]
 
         # split data in 60-20-20 train-val-test sets
         train_x, test_x, train_y, test_y = train_test_split(

@@ -34,8 +34,9 @@ who_tables_dir = '/home/ebaumer/Code/kimetrica/meron_gh/data'
 # con_feats.extract_batch(processed_img_dir, meta_file, cnn_feature_dir, n=1000)
 
 # Find growth indicators for SMART data
-sz = SmartZscores(who_tables_dir)
-sz.calc_measures(meta_file, measures=['wfh', 'hfa', 'wfa'])
+sz = SmartZscores(who_tables_dir, meta_file)
+sz.calc_measures(measures=['wfh', 'hfa', 'wfa'])
+sz.classify_malnutrition()
+sz.cat_encoding()
 
-sz.df_meta.to_csv('/Data/kimetrica/meron/kenya_data/meron_link_data/meron_meta_processed.csv',
-    index=False)
+sz.write_processed_meta('/Data/kimetrica/meron/kenya_data/meron_link_data/meron_meta_processed.csv')
