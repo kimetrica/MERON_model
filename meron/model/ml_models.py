@@ -12,6 +12,7 @@ from keras.layers import Dense, Dropout, Activation
 from keras.losses import mean_squared_error, categorical_crossentropy
 from keras.callbacks import EarlyStopping
 from keras.models import load_model, Sequential
+from keras.regularizers import l2
 from scipy.stats import pearsonr
 from keras.wrappers.scikit_learn import KerasClassifier, KerasRegressor
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
@@ -132,20 +133,27 @@ class Meron(object):
                     input_dim=4098,
                     task_type='classification',
                     n_hidden_layers=1,
-                    n_nodes_output=3):
+                    n_nodes_output=3,
+                    reg_val=0.001):
         """
         This function prepares the neural networks for training, using the
         optimized hyperparameters.
         """
         # Add first hidden layer
         conv_model = Sequential()
-        conv_model.add(Dense(neurons, input_dim=input_dim))
+        if reg_val is None:
+            conv_model.add(Dense(neurons, input_dim=input_dim))
+        else:
+            conv_model.add(Dense(neurons, input_dim=input_dim, kernel_regularizer=l2(reg_val)))
         conv_model.add(Activation(activation))
         conv_model.add(Dropout(dropout))
 
         # Add additional hidden layers
         for n in range(0, n_hidden_layers-1):
-            conv_model.add(Dense(neurons))
+            if reg_val is None:
+                conv_model.add(Dense(neurons))
+            else:
+                conv_model.add(Dense(neurons, kernel_regularizer=l2(reg_val)))
             conv_model.add(Dropout(dropout))
             conv_model.add(Activation(activation))
 
@@ -172,7 +180,7 @@ class Meron(object):
                                  early_stop_patience=5,
                                  n_iter_search=75,
                                  n_epochs=5000,
-                                 batchsize=128,
+                                 batchsize=512,
                                  val_split=0.2,
                                  num_hid_layers=1,
                                  out_fname=None):
@@ -255,7 +263,7 @@ class Meron(object):
                     early_stop_patience=5,
                     n_iter_search=75,
                     n_epochs=5000,
-                    batchsize=128,
+                    batchsize=512,
                     val_split=0.2,
                     num_hid_layers=1,
                     out_fname=None):
@@ -268,13 +276,11 @@ class Meron(object):
         # only need to tune hyperparemeters once
         # conv_params = np.load(self.config[self.dep]["conv_params_file"]).item()
 
-        import ipdb; ipdb.set_trace()  # breakpoint 4716f91e //
         conv = self.build_model(**conv_params, n_hidden_layers=num_hid_layers)
 
         # stop training if valdidation error increases for
         early_stop = EarlyStopping(monitor=early_stop_monitor, patience=early_stop_patience)
 
-        import ipdb; ipdb.set_trace()  # breakpoint 8f8a30e2 //
         if self.pred_type == 'classification':
             # train models
             conv.fit(
@@ -360,7 +366,7 @@ class MeronMorph(Meron):
 
         # split data in 60-20-20 train-val-test sets
         train_x, test_x, train_y, test_y = train_test_split(
-            df, y, test_size=0.2, random_state=42
+            df, y, test_size=0.2, random_state=42, stratify=y
         )
 
         train_x_conv = train_x[var_list_conv].values
@@ -438,7 +444,7 @@ class MeronSmart(Meron):
 
         # split data in 60-20-20 train-val-test sets
         train_x, test_x, train_y, test_y = train_test_split(
-            df, y, test_size=0.2, random_state=42
+            df, y, test_size=0.2, random_state=42, stratify=y
         )
 
         train_x_conv = train_x[var_list_conv].values

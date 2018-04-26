@@ -1,8 +1,8 @@
-from sklearn.models import load_model
+from keras.models import load_model
 import numpy as np
 import os
 from model import MeronSmart
-from models import plot_confusion_matrix
+from model import plot_confusion_matrix
 
 # Flags
 train_model_flg = True
@@ -47,8 +47,8 @@ if tune_hyperparams_flg:
     tuned_params = meron.optimize_hyperparameters(
         data_tt['train_x_conv'], data_tt['train_y'], param_dist,
     )
-else:
-    tuned_params = np.load(hyper_param_file).item()
+# else:
+#     tuned_params = np.load(hyper_param_file).item()
 
 if train_model_flg:
     conv = meron.train_model(data_tt["train_x_conv"],
