@@ -45,14 +45,18 @@ data_tt = meron.prep_data(features_dir,
 # Train nn with option to tune hyper parameters
 if tune_hyperparams_flg:
     tuned_params = meron.optimize_hyperparameters(
-        data_tt['train_x_conv'], data_tt['train_y'], param_dist,
+        data_tt['train_x'], data_tt['train_y'],
+        data_tt['test_x'], data_tt['test_y'],
+        param_dist,
     )
 # else:
 #     tuned_params = np.load(hyper_param_file).item()
 
 if train_model_flg:
-    conv = meron.train_model(data_tt["train_x_conv"],
+    conv = meron.train_model(data_tt["train_x"],
                              data_tt["train_y"],
+                             data_tt["test_x"],
+                             data_tt["test_y"],
                              tuned_params,
                              out_fname=save_model_flg)
 

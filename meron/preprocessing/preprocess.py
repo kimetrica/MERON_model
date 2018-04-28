@@ -3,6 +3,7 @@ import dlib
 import logging
 import numpy as np
 import pandas as pd
+from scipy.stats import norm
 import os
 import sys
 
@@ -11,6 +12,10 @@ from imutils.face_utils import FaceAligner
 from keras.engine import Model
 from keras_vggface.vggface import VGGFace
 from keras.preprocessing import image
+from keras.layers import Input, Dense, Lambda
+from keras.callbacks import EarlyStopping, ModelCheckpoint
+from keras import backend as K
+from keras import metrics
 from keras.applications.vgg16 import preprocess_input
 from sklearn.decomposition import PCA
 from preprocessing.zscore_finder import Zscores
@@ -422,6 +427,41 @@ class ExtractCNNfeatures(object):
             # Write features to csv file for batch of n images
             fname = 'features_' + str(i) + '.csv'
             df.to_csv(os.path.join(out_dir, fname), index=False)
+
+    def deep_auto_encoder(self,
+                          train_x,
+                          test_x,
+                          input_dim,
+                          out_dir):
+        '''
+        '''
+
+        model_fname = os.path.join(out_dir, 'encoder_cnn.hdf5')
+        early_stop = EarlyStopping(monitor='val_loss', patience=4)
+        checkpoint = ModelCheckpoint(model_fname, monitor='val_loss', verbose=1,
+                                     save_best_only=True, mode='min')
+
+        input_data = Input(shape=(input_dim,))
+
+        encoder = Dense(512, activation='relu')(input_data)
+        encoder = Dense(256, activation='relu')(encoder)
+        encoder = Dense(128, activation='relu')(encoder)
+
+        decoder = Dense(256, activation='relu')(encoder)
+        decoder = Dense(512, activation='relu')(decoder)
+        decoder = Dense(input_dim, activation='linear')(decoder)
+
+        autoencoder = Model(input_data, decoder)
+        autoencoder.compile(optimizer='adam', loss='mse')
+        autoencoder.fit(train_x,
+                        train_x,
+                        epochs=200,
+                        batch_size=512,
+                        callbacks=[checkpoint, early_stop],
+                        shuffle=True,
+                        validation_data=(test_x, test_x))
+
+        return encoder
 
 
 class SmartZscores(Zscores):

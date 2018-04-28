@@ -173,10 +173,12 @@ class Meron(object):
         return conv_model
 
     def optimize_hyperparameters(self,
-                                 train_x_conv,
+                                 train_x,
                                  train_y,
+                                 test_x,
+                                 test_y,
                                  param_dist,
-                                 early_stop_monitor='val_los',
+                                 early_stop_monitor='val_loss',
                                  early_stop_patience=5,
                                  n_iter_search=75,
                                  n_epochs=5000,
@@ -218,7 +220,8 @@ class Meron(object):
                 build_fn=self.build_model,
                 epochs=n_epochs,
                 batch_size=batchsize,
-                validation_split=val_split,
+                validation_data=(test_x, test_y),
+                # validation_split=val_split,
                 class_weight=self._get_class_weights(train_y, neural_net=True),
                 shuffle=True
             )
@@ -233,7 +236,8 @@ class Meron(object):
                 build_fn=self.build_model,
                 epochs=n_epochs,
                 batch_size=batchsize,
-                validation_split=val_split,
+                validation_data=(test_x, test_y),
+                # validation_split=val_split,
                 shuffle=True
             )
 
@@ -245,7 +249,7 @@ class Meron(object):
            fit_params={'callbacks': [early_stop]}
         )
 
-        random_search_conv = random_search_conv.fit(train_x_conv, train_y)
+        random_search_conv = random_search_conv.fit(train_x, train_y)
 
         # ------------------------------
         # save optimized hyperparameters
@@ -258,13 +262,15 @@ class Meron(object):
     def train_model(self,
                     train_x,
                     train_y,
+                    test_x,
+                    test_y,
                     conv_params,
-                    early_stop_monitor='val_los',
+                    early_stop_monitor='val_loss',
                     early_stop_patience=5,
                     n_iter_search=75,
                     n_epochs=5000,
                     batchsize=512,
-                    val_split=0.2,
+                    # val_split=0.2,
                     num_hid_layers=1,
                     out_fname=None):
         """
@@ -288,7 +294,8 @@ class Meron(object):
                 np.array(pd.get_dummies(train_y)),
                 epochs=n_epochs,
                 batch_size=batchsize,
-                validation_split=val_split,
+                validation_data=(test_x, np.array(pd.get_dummies(test_y))),
+                # validation_split=val_split,
                 callbacks=[early_stop],
                 class_weight=self._get_class_weights(train_y, neural_net=True),
                 shuffle=True, verbose=1
@@ -301,7 +308,8 @@ class Meron(object):
                 train_x, train_y,
                 epochs=n_epochs,
                 batch_size=batchsize,
-                validation_split=val_split,
+                validation_data=(test_x, np.array(pd.get_dummies(test_y))),
+                # validation_split=val_split,
                 callbacks=[early_stop],
                 shuffle=True, verbose=1
             )
@@ -369,23 +377,23 @@ class MeronMorph(Meron):
             df, y, test_size=0.2, random_state=42, stratify=y
         )
 
-        train_x_conv = train_x[var_list_conv].values
-        test_x_conv = test_x[var_list_conv].values
+        train_x = train_x[var_list_conv].values
+        test_x = test_x[var_list_conv].values
 
         # Scale input data
-        conv_scaler = StandardScaler().fit(np.concatenate((train_x_conv, test_x_conv), axis=0))
+        conv_scaler = StandardScaler().fit(np.concatenate((train_x, test_x), axis=0))
 
-        train_x_conv = conv_scaler.transform(train_x_conv)
-        test_x_conv = conv_scaler.transform(test_x_conv)
+        train_x = conv_scaler.transform(train_x)
+        test_x = conv_scaler.transform(test_x)
 
         train_y = train_y.values.flatten()
         test_y = test_y.values.flatten()
 
         train_test_set = {}
-        train_test_set['train_x_conv'] = train_x_conv
+        train_test_set['train_x'] = train_x
         train_test_set['train_y'] = train_y
         train_test_set['test_y'] = test_y
-        train_test_set['test_x_conv'] = test_x_conv
+        train_test_set['test_x'] = test_x
 
         if not (out_fname is None):
             joblib.dump(conv_scaler, out_fname)
@@ -447,23 +455,23 @@ class MeronSmart(Meron):
             df, y, test_size=0.2, random_state=42, stratify=y
         )
 
-        train_x_conv = train_x[var_list_conv].values
-        test_x_conv = test_x[var_list_conv].values
+        train_x = train_x[var_list_conv].values
+        test_x = test_x[var_list_conv].values
 
         # Scale input data
-        conv_scaler = StandardScaler().fit(np.concatenate((train_x_conv, test_x_conv), axis=0))
+        conv_scaler = StandardScaler().fit(np.concatenate((train_x, test_x), axis=0))
 
-        train_x_conv = conv_scaler.transform(train_x_conv)
-        test_x_conv = conv_scaler.transform(test_x_conv)
+        train_x = conv_scaler.transform(train_x)
+        test_x = conv_scaler.transform(test_x)
 
         train_y = train_y.values.flatten()
         test_y = test_y.values.flatten()
 
         train_test_set = {}
-        train_test_set['train_x_conv'] = train_x_conv
+        train_test_set['train_x'] = train_x
         train_test_set['train_y'] = train_y
         train_test_set['test_y'] = test_y
-        train_test_set['test_x_conv'] = test_x_conv
+        train_test_set['test_x'] = test_x
 
         if not (out_fname is None):
             joblib.dump(conv_scaler, out_fname)
