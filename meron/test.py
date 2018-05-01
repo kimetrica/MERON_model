@@ -13,7 +13,8 @@ raw_img_dir = '/Data/kimetrica/meron/kenya_data/meron_photos'
 processed_img_dir = '/Data/kimetrica/meron/kenya_data/meron_photos_processed/'
 
 # This is the directory to write the CNN feature files
-cnn_feature_dir = '/Data/kimetrica/meron/features_fc6'
+morph_feature_dir = '/Data/kimetrica/meron/features_fc6'
+resnet_feature_dir = '/Data/kimetrica/meron/features_resnet'
 
 # This is the file for Dlib trained facial landmark detection model. Used for aligning facial image
 landmark_file = '/home/ebaumer/Code/kimetrica/meron_gh/data/shape_predictor_68_face_landmarks.dat'
@@ -26,9 +27,10 @@ who_tables_dir = '/home/ebaumer/Code/kimetrica/meron_gh/data'
 
 # Processed meta-data file
 processed_meta_file = '/Data/kimetrica/meron/kenya_data/meron_link_data/meron_meta_processed.csv'
+morph_processed_meta_file = '/Data/kimetrica/meron/MORPH_Album2_Commercial_processed.csv'
 
 # This is the directory to write the CNN feature files
-model_dir = '/Data/kimetrica/meron/models'
+model_encoder = '/Data/kimetrica/meron/models/encoder_cnn.h5'
 
 # Create instance of MORPH specific pre-processing
 # meron = ImagePreProcess(landmark_file=landmark_file)
@@ -42,20 +44,36 @@ model_dir = '/Data/kimetrica/meron/models'
 con_feats = ExtractCNNfeatures()
 # Extract convolutional features from pre-trained VGG network
 # con_feats.extract_batch(processed_img_dir, meta_file, cnn_feature_dir, n=1000)
+# con_feats.extract_batch(processed_img_dir, meta_file, resnet_feature_dir, model_type='resnet50',
+#                         n=1000)
 
 # Read in VGG CNN features
 meron_smart = MeronSmart()
-data_tt = meron_smart.prep_data(cnn_feature_dir, processed_meta_file)
+# --------------------------------------
+# We are going to train the auto-encoder
+# on the larger MORPH dataset
+# --------------------------------------
+# Prep data from MORPH features
+data_tt = meron_smart.prep_data(morph_feature_dir, processed_meta_file, n_params=2048)
 
 # Remove the last two columns of training and testing explanatory variables
 data_tt['train_x'] = np.delete(data_tt['train_x'], np.s_[-2::], 1)
 data_tt['test_x'] = np.delete(data_tt['test_x'], np.s_[-2::], 1)
 
-encoder_model = con_feats.deep_auto_encoder(data_tt['train_x'], data_tt['test_x'], input_dim=4096,
-                                            out_dir=model_dir)
+encoder_model = con_feats.deep_auto_encoder(data_tt['train_x'], data_tt['test_x'], input_dim=2048,
+                                            out_model=model_encoder)
+
+data_tt = meron_smart.prep_data(resnet_feature_dir, processed_meta_file, n_params=2048)
+
+
+# Remove the last two columns of training and testing explanatory variables
+# data_tt['train_x'] = np.delete(data_tt['train_x'], np.s_[-2::], 1)
+# data_tt['test_x'] = np.delete(data_tt['test_x'], np.s_[-2::], 1)
+
+# encoder_model = con_feats.deep_auto_encoder(data_tt['train_x'], data_tt['test_x'], input_dim=2048,
+#                                             out_model=model_encoder)
 
 # Find growth indicators for SMART data
-import ipdb; ipdb.set_trace()  # breakpoint eeeac112 //
 sz = SmartZscores(who_tables_dir, meta_file)
 # sz.calc_measures(measures=['wfh', 'hfa', 'wfa'])
 # sz.classify_malnutrition()

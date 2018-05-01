@@ -7,11 +7,12 @@ import pandas as pd
 import sys
 
 from imblearn.metrics import geometric_mean_score
+from keras_vggface.vggface import VGGFace
 from keras.layers.advanced_activations import LeakyReLU
 from keras.layers import Dense, Dropout, Activation
 from keras.losses import mean_squared_error, categorical_crossentropy
 from keras.callbacks import EarlyStopping
-from keras.models import load_model, Sequential
+from keras.models import load_model, Sequential, Model
 from keras.regularizers import l2
 from scipy.stats import pearsonr
 from keras.wrappers.scikit_learn import KerasClassifier, KerasRegressor
@@ -171,6 +172,151 @@ class Meron(object):
                                metrics=[pearsonr])
 
         return conv_model
+
+    def modify_vgg(self,
+                   train_x,
+                   train_y,
+                   test_x,
+                   test_y,
+                   drop_rate,
+                   out_model_file,
+                   early_stop_monitor='val_loss',
+                   early_stop_patience=5,
+                   n_iter_search=75,
+                   n_epochs=5000,
+                   batchsize=512,
+                   optimizer='Adam',
+                   task_type='classification'):
+
+        # Take second fully-connected layer of VGG model
+        vgg_model = VGGFace()
+        fixed_layers = vgg_model.get_layer('fc6/relu').output
+
+        mod_model = self.extend_existing_model(
+            fixed_layers, train_x, train_y, test_x, test_y, drop_rate,
+            early_stop_monitor=early_stop_monitor, early_stop_patience=early_stop_patience,
+            n_iter_search=n_iter_search, n_epochs=n_epochs, batchsize=batchsize,
+            optimizer=optimizer, task_type=task_type
+        )
+
+        mod_model.save(out_model_file)
+
+        return mod_model
+
+    def modify_encoder(self,
+                       train_x,
+                       train_y,
+                       test_x,
+                       test_y,
+                       drop_rate,
+                       encoder_file,
+                       out_model_file,
+                       early_stop_monitor='val_loss',
+                       early_stop_patience=5,
+                       n_iter_search=75,
+                       n_epochs=5000,
+                       batchsize=512,
+                       optimizer='Adam',
+                       task_type='classification'):
+
+        # Take second fully-connected layer of VGG model
+        encoder = load_model(encoder_file)
+        fixed_layers = encoder.get_layer('Encoder3').output
+
+        mod_model = self.extend_existing_model(
+            fixed_layers, train_x, train_y, test_x, test_y, drop_rate,
+            early_stop_monitor=early_stop_monitor, early_stop_patience=early_stop_patience,
+            n_iter_search=n_iter_search, n_epochs=n_epochs, batchsize=batchsize,
+            optimizer=optimizer, task_type=task_type
+        )
+
+        mod_model.save(out_model_file)
+
+        return mod_model
+
+    def extend_existing_model(self,
+                              fixed_layers,
+                              train_x,
+                              train_y,
+                              test_x,
+                              test_y,
+                              drop_rate,
+                              early_stop_monitor='val_loss',
+                              early_stop_patience=5,
+                              n_iter_search=75,
+                              n_epochs=5000,
+                              batchsize=512,
+                              optimizer='Adam',
+                              task_type='classification'):
+
+        '''Try using the VGG model as a portion of model
+        Modify VGG model for producing facial features
+           Oxford VGGFace Implementation using Keras Functional Framework v2+
+                Very Deep Convolutional Networks for Large-Scale Image Recognition
+                K. Simonyan, A. Zisserman
+                arXiv:1409.1556
+
+                https://github.com/rcmalli/keras-vggface
+
+        '''
+        # Add aditional layers for our training
+        x = Dense(256, activation='relu', name='first_mod_layer')(fixed_layers)
+        x = Dropout(drop_rate)(x)
+        x = Dense(128, activation='relu', name='first_mod_layer')(x)
+        x = Dropout(drop_rate)(x)
+        x = Dense(32, activation='relu', name='second_mod_layer')(x)
+        x = Dropout(drop_rate)(x)
+
+        if task_type == 'classification':
+            out = Dense(4, activation='softmax', name='output')(x)
+        elif task_type == 'regression':
+            out = Dense(1, activation='linear', name='output')(x)
+
+        vgg_new = Model(vgg_model.input, out)
+
+        # Freeze all layers of origina VGG model
+        for i, layer in enumerate(vgg_new.layers):
+            if i <= 21:
+                layer.trainable = False
+
+        if task_type == 'classification':
+            vgg_new.compile(loss='categorical_crossentropy',
+                            optimizer=optimizer,
+                            metrics=['accuracy'])
+        elif task_type == 'regression':
+            vgg_new.compile(loss='mean_squared_error',
+                            optimizer=optimizer,
+                            metrics=[pearsonr])
+
+        early_stop = EarlyStopping(monitor=early_stop_monitor, patience=early_stop_patience)
+
+        if self.pred_type == 'classification':
+            # train models
+            vgg_new.fit(
+                train_x,
+                np.array(pd.get_dummies(train_y)),
+                epochs=n_epochs,
+                batch_size=batchsize,
+                validation_data=(test_x, np.array(pd.get_dummies(test_y))),
+                callbacks=[early_stop],
+                class_weight=self._get_class_weights(train_y, neural_net=True),
+                shuffle=True, verbose=1
+            )
+            self.logger.info('Finished training on convolutional features')
+
+        if self.pred_type == 'regression':
+            # train models
+            vgg_new.fit(
+                train_x, train_y,
+                epochs=n_epochs,
+                batch_size=batchsize,
+                validation_data=(test_x, np.array(pd.get_dummies(test_y))),
+                callbacks=[early_stop],
+                shuffle=True, verbose=1
+            )
+            self.logger.info('Finished training on convolutional features')
+
+        return vgg_new
 
     def optimize_hyperparameters(self,
                                  train_x,
@@ -346,12 +492,13 @@ class MeronMorph(Meron):
     def prep_data(self,
                   features_dir,
                   meta_file,
+                  n_params=4096,
                   out_fname=None):
 
         features = self._load_cnn_features(features_dir)
 
         # VGG has a feature dimension of 4096 for SoftMax
-        var_list_conv = list(np.arange(0, 4096))
+        var_list_conv = list(np.arange(0, n_params))
         var_list_conv = list(map(str, var_list_conv))
 
         var_list_conv.extend(['age', 'race_B', 'race_H', 'race_I', 'race_O', 'race_W', 'gender_M'])
@@ -424,6 +571,7 @@ class MeronSmart(Meron):
     def prep_data(self,
                   features_dir,
                   meta_file,
+                  n_params=4096,  # 2048 for resnet50
                   out_fname=None,
                   cname_ind_class='maln_class',
                   cname_ind='wfh',
@@ -432,7 +580,7 @@ class MeronSmart(Meron):
         features = self._load_cnn_features(features_dir)
 
         # VGG has a feature dimension of 4096 for SoftMax
-        var_list_conv = list(np.arange(0, 4096))
+        var_list_conv = list(np.arange(0, n_params))
         var_list_conv = list(map(str, var_list_conv))
 
         var_list_conv.extend(['age_months', 'gender_male'])

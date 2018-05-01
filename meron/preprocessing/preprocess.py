@@ -12,7 +12,7 @@ from imutils.face_utils import FaceAligner
 from keras.engine import Model
 from keras_vggface.vggface import VGGFace
 from keras.preprocessing import image
-from keras.layers import Input, Dense, Lambda
+from keras.layers import Input, Dense, Lambda, Flatten
 from keras.callbacks import EarlyStopping, ModelCheckpoint
 from keras import backend as K
 from keras import metrics
@@ -306,7 +306,7 @@ class ExtractCNNfeatures(object):
         for j, i in enumerate(range(0, len(lst), n)):
             yield (j, lst[i:i+n])
 
-    def _prep_vgg_for_feature_extraction(self):
+    def _prep_vgg_for_feature_extraction(self, model_type='vgg16'):
         '''Modify VGG model for producing facial features
            Oxford VGGFace Implementation using Keras Functional Framework v2+
                 Very Deep Convolutional Networks for Large-Scale Image Recognition
@@ -323,8 +323,15 @@ class ExtractCNNfeatures(object):
         '''
 
         # Take second fully-connected layer as our output
-        vgg_model = VGGFace()
-        out = vgg_model.get_layer('fc6/relu').output
+        if model_type == 'vgg16':
+            vgg_model = VGGFace(model='vgg16')
+            out = vgg_model.get_layer('fc6/relu').output
+
+        elif model_type == 'resnet50':
+            vgg_model = VGGFace(model='resnet50')
+            last_layer = vgg_model.get_layer('avg_pool').output
+            out = Flatten(name='flatten')(last_layer)
+
         self.extractor = Model(vgg_model.input, out)
 
         # Freeze all layers, since we're using as fixed feature extractor
@@ -378,6 +385,7 @@ class ExtractCNNfeatures(object):
                       img_dir,
                       processed_data_file,
                       out_dir,
+                      model_type='vgg16',
                       photo_cname='photo_id',
                       n=1000):
         '''Batch extract VGG CNN features from a directory of images
@@ -397,7 +405,7 @@ class ExtractCNNfeatures(object):
         '''
 
         # Extract feature cnn from vgg
-        self._prep_vgg_for_feature_extraction()
+        self._prep_vgg_for_feature_extraction(model_type=model_type)
 
         # Read image meta data
         img_meta = pd.read_csv(processed_data_file)
@@ -428,28 +436,29 @@ class ExtractCNNfeatures(object):
             fname = 'features_' + str(i) + '.csv'
             df.to_csv(os.path.join(out_dir, fname), index=False)
 
-    def deep_auto_encoder(self,
-                          train_x,
-                          test_x,
-                          input_dim,
-                          out_dir):
+    def train_auto_encoder(self,
+                           train_x,
+                           test_x,
+                           input_dim,
+                           out_model_file='encoder_cnn.h5',
+                           monitor='val_loss',
+                           patience=4):
         '''
         '''
 
-        model_fname = os.path.join(out_dir, 'encoder_cnn.hdf5')
-        early_stop = EarlyStopping(monitor='val_loss', patience=4)
-        checkpoint = ModelCheckpoint(model_fname, monitor='val_loss', verbose=1,
+        early_stop = EarlyStopping(monitor=monitor, patience=patience)
+        checkpoint = ModelCheckpoint(out_model, monitor='val_loss', verbose=1,
                                      save_best_only=True, mode='min')
 
-        input_data = Input(shape=(input_dim,))
+        input_data = Input(shape=(input_dim,), name='Input')
 
-        encoder = Dense(512, activation='relu')(input_data)
-        encoder = Dense(256, activation='relu')(encoder)
-        encoder = Dense(128, activation='relu')(encoder)
+        encoder = Dense(512, activation='relu', name='Encoder1')(input_data)
+        encoder = Dense(256, activation='relu', name='Encoder2')(encoder)
+        encoder = Dense(128, activation='relu', name='Encoder3')(encoder)
 
-        decoder = Dense(256, activation='relu')(encoder)
-        decoder = Dense(512, activation='relu')(decoder)
-        decoder = Dense(input_dim, activation='linear')(decoder)
+        decoder = Dense(256, activation='relu', name='Decoder1')(encoder)
+        decoder = Dense(512, activation='relu', name='Decoder2')(decoder)
+        decoder = Dense(input_dim, activation='linear', name='Output')(decoder)
 
         autoencoder = Model(input_data, decoder)
         autoencoder.compile(optimizer='adam', loss='mse')
@@ -459,7 +468,10 @@ class ExtractCNNfeatures(object):
                         batch_size=512,
                         callbacks=[checkpoint, early_stop],
                         shuffle=True,
-                        validation_data=(test_x, test_x))
+                        validation_data=(test_x, test_x),
+                        verbose=1)
+
+        autoencoder.save(out_model_file)
 
         return encoder
 
