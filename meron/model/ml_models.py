@@ -173,20 +173,20 @@ class Meron(object):
 
         return conv_model
 
-    def vgg(self,
-            train_x,
-            train_y,
-            test_x,
-            test_y,
-            drop_rate,
-            out_model_file,
-            early_stop_monitor='val_loss',
-            early_stop_patience=5,
-            n_iter_search=75,
-            n_epochs=5000,
-            batchsize=512,
-            optimizer='Adam',
-            task_type='classification'):
+    def extend_vgg(self,
+                   train_x,
+                   train_y,
+                   test_x,
+                   test_y,
+                   drop_rate,
+                   out_model_file,
+                   early_stop_monitor='val_loss',
+                   early_stop_patience=5,
+                   n_iter_search=75,
+                   n_epochs=5000,
+                   batchsize=512,
+                   optimizer='Adam',
+                   task_type='classification'):
 
         '''Try using the VGG model as a portion of model
         Modify VGG model for producing facial features
@@ -213,21 +213,21 @@ class Meron(object):
 
         return mod_model
 
-    def encoder(self,
-                train_x,
-                train_y,
-                test_x,
-                test_y,
-                drop_rate,
-                encoder_file,
-                out_model_file,
-                early_stop_monitor='val_loss',
-                early_stop_patience=5,
-                n_iter_search=75,
-                n_epochs=5000,
-                batchsize=512,
-                optimizer='Adam',
-                task_type='classification'):
+    def extend_encoder(self,
+                       train_x,
+                       train_y,
+                       test_x,
+                       test_y,
+                       drop_rate,
+                       encoder_file,
+                       out_model_file,
+                       early_stop_monitor='val_loss',
+                       early_stop_patience=5,
+                       n_iter_search=75,
+                       n_epochs=5000,
+                       batchsize=512,
+                       optimizer='Adam',
+                       task_type='classification'):
 
         # Take second fully-connected layer of VGG model
         encoder = load_model(encoder_file)
