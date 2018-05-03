@@ -572,11 +572,11 @@ class MeronSmart(Meron):
         features = self._load_cnn_features(features_dir)
 
         # vgg has a feature dimension of 4096 for softmax
-        var_list_conv = list(np.arange(0, n_params))
+        var_list_conv = list(map(str, np.arange(0, n_params)))
 
         features_only = features[var_list_conv]
 
-        test_features, train_features = train_test_split(features_only, test_size=0.2,
+        train_features, test_features = train_test_split(features_only, test_size=0.2,
                                                          random_state=42)
 
         return test_features, train_features

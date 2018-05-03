@@ -448,7 +448,7 @@ class ExtractCNNfeatures(object):
         '''
 
         early_stop = EarlyStopping(monitor=monitor, patience=patience)
-        checkpoint = ModelCheckpoint(out_model, monitor='val_loss', verbose=1,
+        checkpoint = ModelCheckpoint(out_model_file, monitor='val_loss', verbose=1,
                                      save_best_only=True, mode='min')
 
         input_data = Input(shape=(input_dim,), name='Input')
