@@ -173,27 +173,37 @@ class Meron(object):
 
         return conv_model
 
-    def modify_vgg(self,
-                   train_x,
-                   train_y,
-                   test_x,
-                   test_y,
-                   drop_rate,
-                   out_model_file,
-                   early_stop_monitor='val_loss',
-                   early_stop_patience=5,
-                   n_iter_search=75,
-                   n_epochs=5000,
-                   batchsize=512,
-                   optimizer='Adam',
-                   task_type='classification'):
+    def vgg(self,
+            train_x,
+            train_y,
+            test_x,
+            test_y,
+            drop_rate,
+            out_model_file,
+            early_stop_monitor='val_loss',
+            early_stop_patience=5,
+            n_iter_search=75,
+            n_epochs=5000,
+            batchsize=512,
+            optimizer='Adam',
+            task_type='classification'):
 
+        '''Try using the VGG model as a portion of model
+        Modify VGG model for producing facial features
+           Oxford VGGFace Implementation using Keras Functional Framework v2+
+                Very Deep Convolutional Networks for Large-Scale Image Recognition
+                K. Simonyan, A. Zisserman
+                arXiv:1409.1556
+
+                https://github.com/rcmalli/keras-vggface
+
+        '''
         # Take second fully-connected layer of VGG model
         vgg_model = VGGFace()
         fixed_layers = vgg_model.get_layer('fc6/relu').output
 
         mod_model = self.extend_existing_model(
-            fixed_layers, train_x, train_y, test_x, test_y, drop_rate,
+            vgg_model.input, fixed_layers, train_x, train_y, test_x, test_y, drop_rate,
             early_stop_monitor=early_stop_monitor, early_stop_patience=early_stop_patience,
             n_iter_search=n_iter_search, n_epochs=n_epochs, batchsize=batchsize,
             optimizer=optimizer, task_type=task_type
@@ -203,28 +213,28 @@ class Meron(object):
 
         return mod_model
 
-    def modify_encoder(self,
-                       train_x,
-                       train_y,
-                       test_x,
-                       test_y,
-                       drop_rate,
-                       encoder_file,
-                       out_model_file,
-                       early_stop_monitor='val_loss',
-                       early_stop_patience=5,
-                       n_iter_search=75,
-                       n_epochs=5000,
-                       batchsize=512,
-                       optimizer='Adam',
-                       task_type='classification'):
+    def encoder(self,
+                train_x,
+                train_y,
+                test_x,
+                test_y,
+                drop_rate,
+                encoder_file,
+                out_model_file,
+                early_stop_monitor='val_loss',
+                early_stop_patience=5,
+                n_iter_search=75,
+                n_epochs=5000,
+                batchsize=512,
+                optimizer='Adam',
+                task_type='classification'):
 
         # Take second fully-connected layer of VGG model
         encoder = load_model(encoder_file)
         fixed_layers = encoder.get_layer('Encoder3').output
 
         mod_model = self.extend_existing_model(
-            fixed_layers, train_x, train_y, test_x, test_y, drop_rate,
+            encoder.input, fixed_layers, train_x, train_y, test_x, test_y, drop_rate,
             early_stop_monitor=early_stop_monitor, early_stop_patience=early_stop_patience,
             n_iter_search=n_iter_search, n_epochs=n_epochs, batchsize=batchsize,
             optimizer=optimizer, task_type=task_type
@@ -235,6 +245,7 @@ class Meron(object):
         return mod_model
 
     def extend_existing_model(self,
+                              model_input,
                               fixed_layers,
                               train_x,
                               train_y,
@@ -249,16 +260,6 @@ class Meron(object):
                               optimizer='Adam',
                               task_type='classification'):
 
-        '''Try using the VGG model as a portion of model
-        Modify VGG model for producing facial features
-           Oxford VGGFace Implementation using Keras Functional Framework v2+
-                Very Deep Convolutional Networks for Large-Scale Image Recognition
-                K. Simonyan, A. Zisserman
-                arXiv:1409.1556
-
-                https://github.com/rcmalli/keras-vggface
-
-        '''
         # Add aditional layers for our training
         x = Dense(256, activation='relu', name='first_mod_layer')(fixed_layers)
         x = Dropout(drop_rate)(x)
@@ -272,27 +273,27 @@ class Meron(object):
         elif task_type == 'regression':
             out = Dense(1, activation='linear', name='output')(x)
 
-        vgg_new = Model(vgg_model.input, out)
+        model_new = Model(model_input, out)
 
         # Freeze all layers of origina VGG model
-        for i, layer in enumerate(vgg_new.layers):
+        for i, layer in enumerate(model_new.layers):
             if i <= 21:
                 layer.trainable = False
 
         if task_type == 'classification':
-            vgg_new.compile(loss='categorical_crossentropy',
-                            optimizer=optimizer,
-                            metrics=['accuracy'])
+            model_new.compile(loss='categorical_crossentropy',
+                              optimizer=optimizer,
+                              metrics=['accuracy'])
         elif task_type == 'regression':
-            vgg_new.compile(loss='mean_squared_error',
-                            optimizer=optimizer,
-                            metrics=[pearsonr])
+            model_new.compile(loss='mean_squared_error',
+                              optimizer=optimizer,
+                              metrics=[pearsonr])
 
         early_stop = EarlyStopping(monitor=early_stop_monitor, patience=early_stop_patience)
 
         if self.pred_type == 'classification':
             # train models
-            vgg_new.fit(
+            model_new.fit(
                 train_x,
                 np.array(pd.get_dummies(train_y)),
                 epochs=n_epochs,
@@ -306,7 +307,7 @@ class Meron(object):
 
         if self.pred_type == 'regression':
             # train models
-            vgg_new.fit(
+            model_new.fit(
                 train_x, train_y,
                 epochs=n_epochs,
                 batch_size=batchsize,
@@ -316,7 +317,7 @@ class Meron(object):
             )
             self.logger.info('Finished training on convolutional features')
 
-        return vgg_new
+        return model_new
 
     def optimize_hyperparameters(self,
                                  train_x,
@@ -367,7 +368,6 @@ class Meron(object):
                 epochs=n_epochs,
                 batch_size=batchsize,
                 validation_data=(test_x, test_y),
-                # validation_split=val_split,
                 class_weight=self._get_class_weights(train_y, neural_net=True),
                 shuffle=True
             )
@@ -383,7 +383,6 @@ class Meron(object):
                 epochs=n_epochs,
                 batch_size=batchsize,
                 validation_data=(test_x, test_y),
-                # validation_split=val_split,
                 shuffle=True
             )
 
@@ -568,18 +567,33 @@ class MeronSmart(Meron):
 
         return features
 
+    def prep_features(self, features_dir, n_params=2048):
+
+        features = self._load_cnn_features(features_dir)
+
+        # vgg has a feature dimension of 4096 for softmax
+        var_list_conv = list(np.arange(0, n_params))
+
+        features_only = features[var_list_conv]
+
+        test_features, train_features = train_test_split(features_only, test_size=0.2,
+                                                         random_state=42)
+
+        return test_features, train_features
+
     def prep_data(self,
                   features_dir,
                   meta_file,
                   n_params=4096,  # 2048 for resnet50
                   out_fname=None,
+                  scaler_flg=False,
                   cname_ind_class='maln_class',
                   cname_ind='wfh',
                   cname_merge='photo_id'):
 
         features = self._load_cnn_features(features_dir)
 
-        # VGG has a feature dimension of 4096 for SoftMax
+        # vgg has a feature dimension of 4096 for softmax
         var_list_conv = list(np.arange(0, n_params))
         var_list_conv = list(map(str, var_list_conv))
 
@@ -607,10 +621,11 @@ class MeronSmart(Meron):
         test_x = test_x[var_list_conv].values
 
         # Scale input data
-        conv_scaler = StandardScaler().fit(np.concatenate((train_x, test_x), axis=0))
+        if scaler_flg:
+            conv_scaler = StandardScaler().fit(np.concatenate((train_x, test_x), axis=0))
 
-        train_x = conv_scaler.transform(train_x)
-        test_x = conv_scaler.transform(test_x)
+            train_x = conv_scaler.transform(train_x)
+            test_x = conv_scaler.transform(test_x)
 
         train_y = train_y.values.flatten()
         test_y = test_y.values.flatten()

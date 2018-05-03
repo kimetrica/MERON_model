@@ -76,7 +76,8 @@ class ImagePreProcess(object):
         # --------------------------------------------
         self.detector = dlib.get_frontal_face_detector()
         self.predictor = dlib.shape_predictor(landmark_file)
-        self.fa = FaceAligner(self.predictor, desiredLeftEye=(0.35, 0.50), desiredFaceWidth=224)
+        self.fa = FaceAligner(self.predictor, desiredFaceWidth=224)
+        # desiredLeftEye=(0.35, 0.50),
 
     def _detect_align(self, img, n_faces):
         '''Detect faces in image and align.
