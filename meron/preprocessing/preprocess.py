@@ -142,6 +142,10 @@ class ImagePreProcess(object):
                   Max number of faces to detect in image (Currently only 1 face)
         '''
 
+        n_imgs = 0
+        n_skp = 0
+
+        import ipdb; ipdb.set_trace()  # breakpoint 1e21d790 //
         for single_img in os.listdir(in_img_dir):
             if os.path.isfile(os.path.join(out_img_dir, single_img)):
                 continue
@@ -149,16 +153,25 @@ class ImagePreProcess(object):
             img = cv2.imread(os.path.join(in_img_dir, single_img))
             try:
                 processed_img = self._detect_align(img, 1)  # n_faces
-
+                n_imgs += 1
             # -----------------------------
             # Catch unsupported image types
             # No file writen for bad images
             # -----------------------------
-            except RuntimeError:
+            except: # RuntimeError:
+                n_skp += 1
+                self.logger.warning('Unable to process image: {}'.format(single_img))
                 continue
+
+            if not processed_img:
+                n_skp += 1
+                self.logger.info("No face detected in {}".format(single_img))
 
             for i, proc_img in enumerate(processed_img):
                 cv2.imwrite(os.path.join(out_img_dir, os.path.basename(single_img)), proc_img)
+
+        self.logger.info('{} images successfully processed'.format(str(n_imgs)))
+        self.logger.info('{} images skipped for processed'.format(str(n_skp)))
 
         return True
 

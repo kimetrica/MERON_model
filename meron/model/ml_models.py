@@ -5,15 +5,15 @@ import numpy as np
 import os
 import pandas as pd
 import sys
-
 from imblearn.metrics import geometric_mean_score
 from keras_vggface.vggface import VGGFace
 from keras.layers.advanced_activations import LeakyReLU
-from keras.layers import Dense, Dropout, Activation
+from keras.layers import Dense, Dropout, Activation, Input
 from keras.losses import mean_squared_error, categorical_crossentropy
 from keras.callbacks import EarlyStopping
 from keras.models import load_model, Sequential, Model
 from keras.regularizers import l2
+from keras.layers.merge import concatenate
 from scipy.stats import pearsonr
 from keras.wrappers.scikit_learn import KerasClassifier, KerasRegressor
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
@@ -23,6 +23,7 @@ from sklearn.metrics import confusion_matrix, make_scorer, r2_score
 from sklearn.ensemble import ExtraTreesClassifier, ExtraTreesRegressor
 from sklearn.externals import joblib
 from sklearn.preprocessing import StandardScaler, maxabs_scale
+from keras.optimizers import Adam
 
 
 def plot_confusion_matrix(true_vals, predicted_vals, classes,
@@ -110,7 +111,8 @@ class Meron(object):
         hdlr1.setFormatter(fmt1)
         self.logger.addHandler(hdlr1)
 
-    def _get_class_weights(self, y, neural_net=False):
+    @staticmethod
+    def _get_class_weights(y, neural_net=False):
         '''
         Determine class weights of training data to account if data is skewed
         '''
@@ -127,11 +129,11 @@ class Meron(object):
         return class_weights
 
     @staticmethod
-    def build_model(neurons=128.,
-                    dropout=0.,
+    def build_model(neurons=[64,32,16],
+                    dropout=0.2,
                     activation='relu',
-                    optimizer='adam',
-                    input_dim=4098,
+                    optimizer=Adam(lr=0.0001),
+                    input_dim=130,
                     task_type='classification',
                     n_hidden_layers=1,
                     n_nodes_output=3,
@@ -143,20 +145,20 @@ class Meron(object):
         # Add first hidden layer
         conv_model = Sequential()
         if reg_val is None:
-            conv_model.add(Dense(neurons, input_dim=input_dim))
+            conv_model.add(Dense(neurons[0], input_dim=input_dim))
         else:
-            conv_model.add(Dense(neurons, input_dim=input_dim, kernel_regularizer=l2(reg_val)))
+            conv_model.add(Dense(neurons[0], input_dim=input_dim, kernel_regularizer=l2(reg_val)))
         conv_model.add(Activation(activation))
         conv_model.add(Dropout(dropout))
 
         # Add additional hidden layers
         for n in range(0, n_hidden_layers-1):
             if reg_val is None:
-                conv_model.add(Dense(neurons))
+                conv_model.add(Dense(neurons[n+1]))
             else:
-                conv_model.add(Dense(neurons, kernel_regularizer=l2(reg_val)))
-            conv_model.add(Dropout(dropout))
+                conv_model.add(Dense(neurons[n+1], kernel_regularizer=l2(reg_val)))
             conv_model.add(Activation(activation))
+            conv_model.add(Dropout(dropout))
 
         # Add output layer
         if task_type == 'classification':
@@ -243,6 +245,29 @@ class Meron(object):
         mod_model.save(out_model_file)
 
         return mod_model
+
+    def encoder_feature_test(self,
+                encoder_file, #out_model_file from preprocess.py
+                task_type='classification'):
+
+    # Take second fully-connected layer of VGG model
+        encoder_tuned = load_model(encoder_file)
+        fixed_layers = encoder_tuned.get_layer('Encoder3').output
+
+        encoder_extract = Model(encoder_tuned.input, fixed_layers)
+
+        # Freeze all layers, since we're using as fixed feature extractor
+        for layer in encoder_extract.layers:
+            layer.trainable = False
+
+        # Fixed features so optimizer and loss functions are irrelavent
+        encoder_extract.compile(optimizer='Adam', loss='mse')
+
+        return encoder_extract
+
+
+
+
 
     def extend_existing_model(self,
                               model_input,
@@ -492,7 +517,8 @@ class MeronMorph(Meron):
                   features_dir,
                   meta_file,
                   n_params=4096,
-                  out_fname=None):
+                  out_fname=None,
+                  scaler=True):
 
         features = self._load_cnn_features(features_dir)
 
@@ -527,13 +553,14 @@ class MeronMorph(Meron):
         test_x = test_x[var_list_conv].values
 
         # Scale input data
-        conv_scaler = StandardScaler().fit(np.concatenate((train_x, test_x), axis=0))
+        if scaler:
+            conv_scaler = StandardScaler().fit(np.concatenate((train_x, test_x), axis=0))
 
-        train_x = conv_scaler.transform(train_x)
-        test_x = conv_scaler.transform(test_x)
+            train_x = conv_scaler.transform(train_x)
+            test_x = conv_scaler.transform(test_x)
 
-        train_y = train_y.values.flatten()
-        test_y = test_y.values.flatten()
+            train_y = train_y.values.flatten()
+            test_y = test_y.values.flatten()
 
         train_test_set = {}
         train_test_set['train_x'] = train_x
@@ -579,7 +606,7 @@ class MeronSmart(Meron):
         train_features, test_features = train_test_split(features_only, test_size=0.2,
                                                          random_state=42)
 
-        return test_features, train_features
+        return test_features, train_features, features_only
 
     def prep_data(self,
                   features_dir,
