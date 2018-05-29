@@ -145,12 +145,25 @@ class ImagePreProcess(object):
         n_imgs = 0
         n_skp = 0
 
-        import ipdb; ipdb.set_trace()  # breakpoint 1e21d790 //
+        #import ipdb; ipdb.set_trace()  # breakpoint 1e21d790 //
         for single_img in os.listdir(in_img_dir):
             if os.path.isfile(os.path.join(out_img_dir, single_img)):
                 continue
+        ### contrast limited histogram equlization (CLAHE)
+            try:
+                img_bgr = cv2.imread(os.path.join(in_img_dir, single_img))
+                lab = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2LAB)
+                lab_planes = cv2.split(lab)
+                clahe = cv2.createCLAHE(clipLimit=1.5)
+                lab_planes[0] = clahe.apply(lab_planes[0])
+                lab = cv2.merge(lab_planes)
+                img = cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
 
-            img = cv2.imread(os.path.join(in_img_dir, single_img))
+            except:
+                self.logger.warning('Unable to import image')
+                continue
+
+
             try:
                 processed_img = self._detect_align(img, 1)  # n_faces
                 n_imgs += 1
@@ -168,7 +181,7 @@ class ImagePreProcess(object):
                 self.logger.info("No face detected in {}".format(single_img))
 
             for i, proc_img in enumerate(processed_img):
-                cv2.imwrite(os.path.join(out_img_dir, os.path.basename(single_img)), proc_img)
+                cv2.imwrite(os.path.join(out_img_dir, os.path.basename(single_img)),cv2.cvtColor(proc_img, cv2.COLOR_RGB2BGR))
 
         self.logger.info('{} images successfully processed'.format(str(n_imgs)))
         self.logger.info('{} images skipped for processed'.format(str(n_skp)))

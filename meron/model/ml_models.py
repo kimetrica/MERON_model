@@ -7,8 +7,8 @@ import pandas as pd
 import sys
 from imblearn.metrics import geometric_mean_score
 from keras_vggface.vggface import VGGFace
-from keras.layers.advanced_activations import LeakyReLU
-from keras.layers import Dense, Dropout, Activation, Input
+from keras.layers.advanced_activations import LeakyReLU,PReLU
+from keras.layers import Dense, Dropout, Activation, Input, BatchNormalization
 from keras.losses import mean_squared_error, categorical_crossentropy
 from keras.callbacks import EarlyStopping
 from keras.models import load_model, Sequential, Model
@@ -23,7 +23,9 @@ from sklearn.metrics import confusion_matrix, make_scorer, r2_score
 from sklearn.ensemble import ExtraTreesClassifier, ExtraTreesRegressor
 from sklearn.externals import joblib
 from sklearn.preprocessing import StandardScaler, maxabs_scale
-from keras.optimizers import Adam
+from keras.optimizers import Adam, SGD
+import keras.backend as K
+
 
 
 def plot_confusion_matrix(true_vals, predicted_vals, classes,
@@ -129,13 +131,13 @@ class Meron(object):
         return class_weights
 
     @staticmethod
-    def build_model(neurons=[64,32,16],
-                    dropout=0.2,
-                    activation='relu',
+    def build_model(neurons=[32,8],
+                    dropout=0.5,
+                    activation=LeakyReLU(),
                     optimizer=Adam(lr=0.0001),
-                    input_dim=130,
+                    input_dim=2050,
                     task_type='classification',
-                    n_hidden_layers=1,
+                    n_hidden_layers=2,
                     n_nodes_output=3,
                     reg_val=0.001):
         """
@@ -148,16 +150,21 @@ class Meron(object):
             conv_model.add(Dense(neurons[0], input_dim=input_dim))
         else:
             conv_model.add(Dense(neurons[0], input_dim=input_dim, kernel_regularizer=l2(reg_val)))
-        conv_model.add(Activation(activation))
+
+        #conv_model.add(Activation(activation))
+        #advanced Activation
+        conv_model.add(LeakyReLU(alpha=0.7))
         conv_model.add(Dropout(dropout))
 
         # Add additional hidden layers
-        for n in range(0, n_hidden_layers-1):
+        for n in range(1, n_hidden_layers):
             if reg_val is None:
-                conv_model.add(Dense(neurons[n+1]))
+                conv_model.add(Dense(neurons[n]))
             else:
-                conv_model.add(Dense(neurons[n+1], kernel_regularizer=l2(reg_val)))
-            conv_model.add(Activation(activation))
+                conv_model.add(Dense(neurons[n], kernel_regularizer=l2(reg_val)))
+
+            #conv_model.add(Activation(activation))
+            conv_model.add(LeakyReLU(alpha=0.7))
             conv_model.add(Dropout(dropout))
 
         # Add output layer
@@ -167,328 +174,31 @@ class Meron(object):
                                optimizer=optimizer,
                                metrics=['accuracy'])
 
+        if task_type == 'binary':
+            conv_model.add(Dense(1, activation='sigmoid'))
+            conv_model.compile(loss='binary_crossentropy',
+                                   optimizer=optimizer,
+                                   metrics=['accuracy'])
+
         if task_type == 'regression':
             conv_model.add(Dense(1, activation='linear'))
             conv_model.compile(loss='mean_squared_error',
                                optimizer=optimizer,
-                               metrics=[pearsonr])
+                               metrics=[Meron.pearson_coeff])
 
         return conv_model
 
-    def extend_vgg(self,
-                   train_x,
-                   train_y,
-                   test_x,
-                   test_y,
-                   drop_rate,
-                   out_model_file,
-                   early_stop_monitor='val_loss',
-                   early_stop_patience=5,
-                   n_iter_search=75,
-                   n_epochs=5000,
-                   batchsize=512,
-                   optimizer='Adam',
-                   task_type='classification'):
+    @staticmethod
+    def pearson_coeff(y_true, y_pred):
 
-        '''Try using the VGG model as a portion of model
-        Modify VGG model for producing facial features
-           Oxford VGGFace Implementation using Keras Functional Framework v2+
-                Very Deep Convolutional Networks for Large-Scale Image Recognition
-                K. Simonyan, A. Zisserman
-                arXiv:1409.1556
+        fsp = y_pred - K.mean(y_pred) #being K.mean a scalar here, it will be automatically subtracted from all elements in y_pred
+        fst = y_true - K.mean(y_true)
 
-                https://github.com/rcmalli/keras-vggface
+        devP = K.std(y_pred)
+        devT = K.std(y_true)
+        corr=K.mean(fsp*fst)/(devP*devT)
 
-        '''
-        # Take second fully-connected layer of VGG model
-        vgg_model = VGGFace()
-        fixed_layers = vgg_model.get_layer('fc6/relu').output
-
-        mod_model = self.extend_existing_model(
-            vgg_model.input, fixed_layers, train_x, train_y, test_x, test_y, drop_rate,
-            early_stop_monitor=early_stop_monitor, early_stop_patience=early_stop_patience,
-            n_iter_search=n_iter_search, n_epochs=n_epochs, batchsize=batchsize,
-            optimizer=optimizer, task_type=task_type
-        )
-
-        mod_model.save(out_model_file)
-
-        return mod_model
-
-    def extend_encoder(self,
-                       train_x,
-                       train_y,
-                       test_x,
-                       test_y,
-                       drop_rate,
-                       encoder_file,
-                       out_model_file,
-                       early_stop_monitor='val_loss',
-                       early_stop_patience=5,
-                       n_iter_search=75,
-                       n_epochs=5000,
-                       batchsize=512,
-                       optimizer='Adam',
-                       task_type='classification'):
-
-        # Take second fully-connected layer of VGG model
-        encoder = load_model(encoder_file)
-        fixed_layers = encoder.get_layer('Encoder3').output
-
-        mod_model = self.extend_existing_model(
-            encoder.input, fixed_layers, train_x, train_y, test_x, test_y, drop_rate,
-            early_stop_monitor=early_stop_monitor, early_stop_patience=early_stop_patience,
-            n_iter_search=n_iter_search, n_epochs=n_epochs, batchsize=batchsize,
-            optimizer=optimizer, task_type=task_type
-        )
-
-        mod_model.save(out_model_file)
-
-        return mod_model
-
-    def encoder_feature_test(self,
-                encoder_file, #out_model_file from preprocess.py
-                task_type='classification'):
-
-    # Take second fully-connected layer of VGG model
-        encoder_tuned = load_model(encoder_file)
-        fixed_layers = encoder_tuned.get_layer('Encoder3').output
-
-        encoder_extract = Model(encoder_tuned.input, fixed_layers)
-
-        # Freeze all layers, since we're using as fixed feature extractor
-        for layer in encoder_extract.layers:
-            layer.trainable = False
-
-        # Fixed features so optimizer and loss functions are irrelavent
-        encoder_extract.compile(optimizer='Adam', loss='mse')
-
-        return encoder_extract
-
-
-
-
-
-    def extend_existing_model(self,
-                              model_input,
-                              fixed_layers,
-                              train_x,
-                              train_y,
-                              test_x,
-                              test_y,
-                              drop_rate,
-                              early_stop_monitor='val_loss',
-                              early_stop_patience=5,
-                              n_iter_search=75,
-                              n_epochs=5000,
-                              batchsize=512,
-                              optimizer='Adam',
-                              task_type='classification'):
-
-        # Add aditional layers for our training
-        x = Dense(256, activation='relu', name='first_mod_layer')(fixed_layers)
-        x = Dropout(drop_rate)(x)
-        x = Dense(128, activation='relu', name='first_mod_layer')(x)
-        x = Dropout(drop_rate)(x)
-        x = Dense(32, activation='relu', name='second_mod_layer')(x)
-        x = Dropout(drop_rate)(x)
-
-        if task_type == 'classification':
-            out = Dense(4, activation='softmax', name='output')(x)
-        elif task_type == 'regression':
-            out = Dense(1, activation='linear', name='output')(x)
-
-        model_new = Model(model_input, out)
-
-        # Freeze all layers of origina VGG model
-        for i, layer in enumerate(model_new.layers):
-            if i <= 21:
-                layer.trainable = False
-
-        if task_type == 'classification':
-            model_new.compile(loss='categorical_crossentropy',
-                              optimizer=optimizer,
-                              metrics=['accuracy'])
-        elif task_type == 'regression':
-            model_new.compile(loss='mean_squared_error',
-                              optimizer=optimizer,
-                              metrics=[pearsonr])
-
-        early_stop = EarlyStopping(monitor=early_stop_monitor, patience=early_stop_patience)
-
-        if self.pred_type == 'classification':
-            # train models
-            model_new.fit(
-                train_x,
-                np.array(pd.get_dummies(train_y)),
-                epochs=n_epochs,
-                batch_size=batchsize,
-                validation_data=(test_x, np.array(pd.get_dummies(test_y))),
-                callbacks=[early_stop],
-                class_weight=self._get_class_weights(train_y, neural_net=True),
-                shuffle=True, verbose=1
-            )
-            self.logger.info('Finished training on convolutional features')
-
-        if self.pred_type == 'regression':
-            # train models
-            model_new.fit(
-                train_x, train_y,
-                epochs=n_epochs,
-                batch_size=batchsize,
-                validation_data=(test_x, np.array(pd.get_dummies(test_y))),
-                callbacks=[early_stop],
-                shuffle=True, verbose=1
-            )
-            self.logger.info('Finished training on convolutional features')
-
-        return model_new
-
-    def optimize_hyperparameters(self,
-                                 train_x,
-                                 train_y,
-                                 test_x,
-                                 test_y,
-                                 param_dist,
-                                 early_stop_monitor='val_loss',
-                                 early_stop_patience=5,
-                                 n_iter_search=75,
-                                 n_epochs=5000,
-                                 batchsize=512,
-                                 val_split=0.2,
-                                 num_hid_layers=1,
-                                 out_fname=None):
-        """
-        This function performs a randomized grid seach to optimize the
-        hyperparameters of the feedforward neural network and saves a
-        dictionary of those parameters. Note that this action only needs
-        to be done once; after the optimal parameters are found, we can
-        just load in the dictionary.
-        """
-
-        # Quit training if validation loss increases for N epochs
-        early_stop = EarlyStopping(monitor=early_stop_monitor, patience=early_stop_patience)
-
-        # ------------------------------------------
-        # Build models for optimize hyper-parameters
-        # Start with initial parameters
-        # ------------------------------------------
-        init_param_dict = {}
-        init_param_dict['neurons'] = 128
-        init_param_dict['dropout'] = 0
-        init_param_dict['activation'] = 'relu'
-        init_param_dict['optimizer'] = 'adam'
-        init_param_dict['input_dim'] = 4098
-        init_param_dict['task_type'] = 'classification'
-
-        # --------------
-        # Classification
-        # --------------
-        if self.pred_type == 'classification':
-
-            score = make_scorer(geometric_mean_score)
-            # Optimizer network with convolutional features
-            conv_model = KerasClassifier(
-                build_fn=self.build_model,
-                epochs=n_epochs,
-                batch_size=batchsize,
-                validation_data=(test_x, test_y),
-                class_weight=self._get_class_weights(train_y, neural_net=True),
-                shuffle=True
-            )
-
-        # ----------
-        # Regression
-        # ----------
-        if self.pred_type == 'regression':
-
-            score = 'r2'
-            conv_model = KerasRegressor(
-                build_fn=self.build_model,
-                epochs=n_epochs,
-                batch_size=batchsize,
-                validation_data=(test_x, test_y),
-                shuffle=True
-            )
-
-        # -------------------
-        # Conduct grid search
-        # -------------------
-        random_search_conv = RandomizedSearchCV(
-           conv_model, param_distributions=param_dist, n_iter=n_iter_search, scoring=score,
-           fit_params={'callbacks': [early_stop]}
-        )
-
-        random_search_conv = random_search_conv.fit(train_x, train_y)
-
-        # ------------------------------
-        # save optimized hyperparameters
-        # ------------------------------
-        if not (out_fname is None):
-            np.save(out_fname, random_search_conv.best_params_)
-
-        return random_search_conv.best_params_
-
-    def train_model(self,
-                    train_x,
-                    train_y,
-                    test_x,
-                    test_y,
-                    conv_params,
-                    early_stop_monitor='val_loss',
-                    early_stop_patience=5,
-                    n_iter_search=75,
-                    n_epochs=5000,
-                    batchsize=512,
-                    # val_split=0.2,
-                    num_hid_layers=1,
-                    out_fname=None):
-        """
-        This function tunes hyperparameters (or just loads the optimized ones if
-        already done), then builds and trains the models using those
-        hyperparameters. Returns trained models.
-        """
-
-        # only need to tune hyperparemeters once
-        # conv_params = np.load(self.config[self.dep]["conv_params_file"]).item()
-
-        conv = self.build_model(**conv_params, n_hidden_layers=num_hid_layers)
-
-        # stop training if valdidation error increases for
-        early_stop = EarlyStopping(monitor=early_stop_monitor, patience=early_stop_patience)
-
-        if self.pred_type == 'classification':
-            # train models
-            conv.fit(
-                train_x,
-                np.array(pd.get_dummies(train_y)),
-                epochs=n_epochs,
-                batch_size=batchsize,
-                validation_data=(test_x, np.array(pd.get_dummies(test_y))),
-                # validation_split=val_split,
-                callbacks=[early_stop],
-                class_weight=self._get_class_weights(train_y, neural_net=True),
-                shuffle=True, verbose=1
-            )
-            self.logger.info('Finished training on convolutional features')
-
-        if self.pred_type == 'regression':
-            # train models
-            conv.fit(
-                train_x, train_y,
-                epochs=n_epochs,
-                batch_size=batchsize,
-                validation_data=(test_x, np.array(pd.get_dummies(test_y))),
-                # validation_split=val_split,
-                callbacks=[early_stop],
-                shuffle=True, verbose=1
-            )
-            self.logger.info('Finished training on convolutional features')
-
-        if not (out_fname is None):
-            conv.save(out_fname)
-
-        return conv
+        return corr
 
 
 class MeronMorph(Meron):
