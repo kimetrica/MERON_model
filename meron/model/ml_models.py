@@ -153,7 +153,7 @@ class Meron(object):
 
         #conv_model.add(Activation(activation))
         #advanced Activation
-        conv_model.add(LeakyReLU(alpha=0.7))
+        conv_model.add(LeakyReLU())
         conv_model.add(Dropout(dropout))
 
         # Add additional hidden layers
@@ -164,7 +164,7 @@ class Meron(object):
                 conv_model.add(Dense(neurons[n], kernel_regularizer=l2(reg_val)))
 
             #conv_model.add(Activation(activation))
-            conv_model.add(LeakyReLU(alpha=0.7))
+            conv_model.add(LeakyReLU())
             conv_model.add(Dropout(dropout))
 
         # Add output layer
@@ -184,7 +184,7 @@ class Meron(object):
             conv_model.add(Dense(1, activation='linear'))
             conv_model.compile(loss='mean_squared_error',
                                optimizer=optimizer,
-                               metrics=[Meron.pearson_coeff])
+                               metrics=['acc'])
 
         return conv_model
 
