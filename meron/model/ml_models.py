@@ -7,7 +7,7 @@ import pandas as pd
 import sys
 from imblearn.metrics import geometric_mean_score
 from keras_vggface.vggface import VGGFace
-from keras.layers.advanced_activations import LeakyReLU,PReLU
+from keras.layers.advanced_activations import LeakyReLU, PReLU
 from keras.layers import Dense, Dropout, Activation, Input, BatchNormalization
 from keras.losses import mean_squared_error, categorical_crossentropy
 from keras.callbacks import EarlyStopping
@@ -151,8 +151,8 @@ class Meron(object):
         else:
             conv_model.add(Dense(neurons[0], input_dim=input_dim, kernel_regularizer=l2(reg_val)))
 
-        #conv_model.add(Activation(activation))
-        #advanced Activation
+        # conv_model.add(Activation(activation))
+        # advanced Activation
         conv_model.add(LeakyReLU())
         conv_model.add(Dropout(dropout))
 
@@ -163,7 +163,7 @@ class Meron(object):
             else:
                 conv_model.add(Dense(neurons[n], kernel_regularizer=l2(reg_val)))
 
-            #conv_model.add(Activation(activation))
+            # conv_model.add(Activation(activation))
             conv_model.add(LeakyReLU())
             conv_model.add(Dropout(dropout))
 
@@ -177,8 +177,8 @@ class Meron(object):
         if task_type == 'binary':
             conv_model.add(Dense(1, activation='sigmoid'))
             conv_model.compile(loss='binary_crossentropy',
-                                   optimizer=optimizer,
-                                   metrics=['accuracy'])
+                               optimizer=optimizer,
+                               metrics=['accuracy'])
 
         if task_type == 'regression':
             conv_model.add(Dense(1, activation='linear'))
